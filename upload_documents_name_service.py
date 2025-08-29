@@ -91,13 +91,25 @@ if resp.status_code == 200:
         'CARTA DE ANTIGUEDAD': 'CARTA DE ANTIGUEDAD_'
     }
     folios_mapeados = getId_Folios(sf, folios)
+
     report_rows = []
     not_uploaded_rows = []
+    case_status_map = {}
+
+    for folio, folio_id in folios_mapeados.items():
+        try:
+            case_info = sf.Case.get(folio_id)
+            case_status_map[folio] = case_info.get('Status', '')
+        except Exception as e:
+            case_status_map[folio] = ''
+            print(f"Error al obtener el status inicial del caso {folio_id}: {e}")
+
     if folios_mapeados:
         print("Mapeo de folios a IDs:")
         print(folios_mapeados)
         for folio in folios:
             folio_id = folios_mapeados.get(folio)
+            first_status = case_status_map.get(folio, '')
 
             if folio_id:
                 print(f"Buscando: {folio}")
@@ -116,7 +128,9 @@ if resp.status_code == 200:
                                 'FolioId': folio_id,
                                 'ContentDocumentId': content_document_id,
                                 'DocumentTitle':file_name,
-                                'FechaCarga': datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                                'FechaCarga': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                                'StatusInicial': first_status,
+                                'UpdatedStatus': ''
                             })
                     else:
                         print(f"No se encontro el archivo: {file_path}")
@@ -125,14 +139,15 @@ if resp.status_code == 200:
                             'Archivo No Cargado': archivo_key,
                             'FolioId': folio_id,
                             'ContentDocumentId': 'No subido',
-                            'DocumentTitle': 'No subido'
+                            'DocumentTitle': 'No subido',
+                            'StatusInicial': first_status
                         })
             else:
                 print(f"No hay Id del folio {folio} en SF")
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         report_path = f'Reporte_Folios_Documentos_{timestamp}.csv'
         with open(report_path, 'w', newline='', encoding='utf-8') as csvfile:
-            fieldnames = ['FolioId', 'Folio', 'Clave_de_Archivo', 'ContentDocumentId', 'DocumentTitle', 'FechaCarga']
+            fieldnames = ['FolioId', 'Folio', 'Clave_de_Archivo', 'ContentDocumentId', 'DocumentTitle', 'FechaCarga', 'StatusInicial', 'UpdatedStatus']
             writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
             writer.writeheader()
             for row in report_rows:
@@ -141,7 +156,7 @@ if resp.status_code == 200:
 
         not_uploaded_path = f'Reporte_Folios_No_Cargados_{timestamp}.csv'
         with open(not_uploaded_path, 'w', newline='', encoding='utf-8') as csvfile:
-            fieldnames = ['Folio', 'Archivo No Cargado', 'FolioId', 'ContentDocumentId', 'DocumentTitle']
+            fieldnames = ['Folio', 'Archivo No Cargado', 'FolioId', 'ContentDocumentId', 'DocumentTitle', 'StatusInicial']
             writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
             writer.writeheader()
             for row in not_uploaded_rows:
