@@ -73,7 +73,14 @@ if resp.status_code == 200:
             return folio_id_map
         except Exception as e:
             print("Error al exportar registros: {e}")
-            return None    
+            return None
+
+    def change_case_status(sf_instance, case_id, new_status):
+        try:
+            sf_instance.Case.update(case_id, {'Status': new_status})
+            print(f"Estado del caso {case_id} actualizado a {new_status}.")
+        except Exception as e:
+            print(f"Error al actualizar el estado del caso {case_id}: {e}")    
 
     df_folios = pd.read_csv('C://Users//MCB-0164//Documents//Programas//SubirCancelaciones//Archivos//Folios_por_Subir_Prueba.csv', dtype={'CaseNumber': str})
     print(df_folios.dtypes)
@@ -86,10 +93,12 @@ if resp.status_code == 200:
     nombres_archivos = {
         'NombreGenerico': 'NombreGenerico_',
         'OtroNombreGenerico': 'OtroNombreGenerico_',
-        #'Archivo1': 'Archivo1_',
+        'Archivo1': 'Archivo1_'
         #'Archivo2': 'Archivo2_',
-        'CARTA DE ANTIGUEDAD': 'CARTA DE ANTIGUEDAD_'
+        #'CARTA DE ANTIGUEDAD': 'CARTA DE ANTIGUEDAD_'
     }
+    archivos_count = len(nombres_archivos)
+    print(f"Número de tipos de archivos a buscar por folio: {archivos_count}")
     folios_mapeados = getId_Folios(sf, folios)
 
     report_rows = []
@@ -162,6 +171,34 @@ if resp.status_code == 200:
             for row in not_uploaded_rows:
                 writer.writerow(row)
         print(f"Reporte de archivos no cargados guardado en {not_uploaded_path}")
+        df_report = pd.DataFrame(report_rows)
+        print(df_report)
+        folio_counts = df_report['Folio'].value_counts()
+        print(folio_counts)
+
+        for folio, count in folio_counts.items():
+            if count == archivos_count:
+                folio_id = df_report[df_report['Folio'] == folio]['FolioId'].iloc[0]
+                try:
+                    sf.Case.update(folio_id, {'Status': 'Terminado'})
+                    df_report.loc[df_report['Folio'] == folio, 'UpdatedStatus'] = 'Terminado'
+                    df_report.loc[df_report['Folio'] == folio, 'FechaActualizacion'] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    print(f"El estado del caso {folio} ha sido actualizado a 'Terminado'.")
+                except Exception as e:
+                    df_report.loc[df_report['Folio'] == folio, 'UpdatedStatus'] = f'Error: {e}'
+                    df_report.loc[df_report['Folio'] == folio, 'FechaActualizacion'] = 'No actualizado'
+                    print(f"Error al actualizar el estado del caso {folio}: {e}")
+            else:
+                df_report.loc[df_report['Folio'] == folio, 'UpdatedStatus'] = f'No actualizado - Archivos faltantes: {archivos_count}-{count}'
+                df_report.loc[df_report['Folio'] == folio, 'FechaActualizacion'] = 'No actualizado'
+                print(f"El folio {folio} no tiene todos los archivos requeridos. Archivos encontrados: {count}, Archivos requeridos: {archivos_count}. No se actualizó el estado.")
+        
+        df_report = df_report.drop_duplicates(subset='Folio', keep='first')
+        df_report = df_report.drop(columns=['Clave_de_Archivo', 'ContentDocumentId', 'DocumentTitle'])
+        print(df_report)
+        updated_report_path = f'Reporte_Folios_Status_Actualizado_{timestamp}.csv'
+        df_report.to_csv(updated_report_path, index=False, encoding='utf-8')
+        print(f"Reporte actualizado guardado en {updated_report_path}")
 
     else:
         print("No se pudo obtener el mapeo de folios.")
